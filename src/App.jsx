@@ -1,22 +1,52 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import './App.css'
-import { xml2json } from 'xml-js'
+import { xml2js } from 'xml-js'
+
+// Normalize xml-js (compact) object into plain JSON:
+// - Flatten {_text: "..."} -> "..."
+// - Merge _attributes into object, prefixing keys with underscore (e.g., id -> _id)
+// - Drop _declaration
+function normalizeXmlJs(node, { prefixAttr = true } = {}) {
+  if (Array.isArray(node)) {
+    return node.map((n) => normalizeXmlJs(n, { prefixAttr }))
+  }
+  if (node && typeof node === 'object') {
+    const keys = Object.keys(node)
+    if (keys.length === 1 && keys[0] === '_text') {
+      return node._text
+    }
+    const out = {}
+    if (node._attributes && typeof node._attributes === 'object') {
+      for (const [k, v] of Object.entries(node._attributes)) {
+        const key = prefixAttr ? `_${k}` : k
+        out[key] = v
+      }
+    }
+    for (const [k, v] of Object.entries(node)) {
+      if (k === '_attributes' || k === '_text' || k === '_declaration') continue
+      out[k] = normalizeXmlJs(v, { prefixAttr })
+    }
+    return out
+  }
+  return node
+}
 
 function App() {
   const [xml, setXml] = useState('')
   const [json, setJson] = useState('')
   const [error, setError] = useState('')
   const [pretty, setPretty] = useState(true)
+  const [isDragOver, setIsDragOver] = useState(false)
   const fileInputRef = useRef(null)
 
   const options = useMemo(() => ({
-    compact: true, // simpler JSON
-    spaces: pretty ? 2 : 0,
+    compact: true,
     ignoreComment: true,
-    ignoreDeclaration: false,
+    ignoreDeclaration: true,
     ignoreAttributes: false,
     alwaysChildren: false,
-  }), [pretty])
+    trim: true,
+  }), [])
 
   const onConvert = useCallback(() => {
     setError('')
@@ -25,8 +55,10 @@ function App() {
         setJson('')
         return
       }
-      const result = xml2json(xml, options)
-      setJson(result)
+  const jsObj = xml2js(xml, options)
+  const normalized = normalizeXmlJs(jsObj, { prefixAttr: true })
+  const result = JSON.stringify(normalized, null, pretty ? 2 : 0)
+  setJson(result)
     } catch (e) {
       setJson('')
       setError(e?.message || 'Failed to convert XML')
@@ -62,11 +94,19 @@ function App() {
     e.stopPropagation()
     const file = e.dataTransfer?.files?.[0]
     if (file) onFileChange(file)
+    setIsDragOver(false)
   }, [onFileChange])
 
   const onDragOver = useCallback((e) => {
     e.preventDefault()
     e.stopPropagation()
+    if (!isDragOver) setIsDragOver(true)
+  }, [isDragOver])
+
+  const onDragLeave = useCallback((e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(false)
   }, [])
 
   return (
@@ -100,7 +140,12 @@ function App() {
       </div>
 
       <main className="panes">
-        <section className="pane left" onDrop={onDrop} onDragOver={onDragOver}>
+        <section
+          className={`pane left ${isDragOver ? 'pane--dragover' : ''}`}
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+        >
           <div className="pane-header">XML Input</div>
           <textarea
             className="code-input"
@@ -118,9 +163,7 @@ function App() {
         </section>
       </main>
 
-      <footer className="app-footer">
-        <small>Client-side only. No data is uploaded.</small>
-      </footer>
+      
     </div>
   )
 }
