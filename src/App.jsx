@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { xml2js } from 'xml-js'
 
@@ -47,6 +47,11 @@ function App() {
     alwaysChildren: false,
     trim: true,
   }), [])
+useEffect(() => {
+  if(xml){
+    onConvert()
+  }
+}, [xml])
 
   const onConvert = useCallback(() => {
     setError('')
